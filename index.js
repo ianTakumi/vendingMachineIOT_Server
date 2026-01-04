@@ -1,9 +1,14 @@
 import express from "express";
 import mongoose from "mongoose";
 import morgan from "morgan";
+import dotenv from "dotenv";
+import cors from "cors";
+
 import productRoutes from "./routers/Product.routes.js";
 import userRoutes from "./routers/User.routes.js";
+import orderRoutes from "./routers/Order.routes.js";
 
+dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -13,6 +18,7 @@ const MONGODB_URL =
 
 app.use(express.json());
 app.use(morgan("dev"));
+app.use(cors());
 
 // MongoDB Connection
 const connectDB = async () => {
@@ -52,6 +58,7 @@ connectDB();
 // Routes
 app.use("/api/users", userRoutes);
 app.use("/api/products", productRoutes);
+app.use("/api/orders", orderRoutes);
 
 // Health check endpoint
 app.get("/health", (req, res) => {

@@ -29,7 +29,7 @@ const orderSchema = new mongoose.Schema({
   status: {
     type: String,
     enum: ["processing", "dispensed", "failed"],
-    default: "processing",
+    default: "dispensed",
   },
 
   // IoT device response
@@ -64,14 +64,6 @@ orderSchema.virtual("totalPrice").get(async function () {
     return this.productId.price * this.quantity; // Always same as price since quantity=1
   }
   return null;
-});
-
-// Update timestamp on save
-orderSchema.pre("save", function (next) {
-  if (this.isModified()) {
-    // You can remove updatedAt if not needed for vending machine
-  }
-  next();
 });
 
 // Static method: Create vending machine order
