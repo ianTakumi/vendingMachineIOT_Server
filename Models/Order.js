@@ -117,5 +117,3 @@ orderSchema.methods.markAsFailed = function (deviceResponse = "motor_error") {
 };
 
 export const Order = mongoose.model("Order", orderSchema);
-
-export default orderSchema;
