@@ -1,6 +1,6 @@
-import { Order } from "../models/Order.js";
-import { User } from "../models/User.js";
-import { Product } from "../models/Product.js";
+import { Order } from "../Models/Order.js";
+import { User } from "../Models/User.js";
+import { Product } from "../Models/Product.js";
 
 // Create a new vending machine order
 export const createOrder = async (req, res) => {

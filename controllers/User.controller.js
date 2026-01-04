@@ -1,4 +1,4 @@
-import { User } from "../models/User.js";
+import { User } from "../Models/User.js";
 
 // Create a new user (REQUIRED RFID)
 export const createUser = async (req, res) => {
