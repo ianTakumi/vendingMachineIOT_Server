@@ -1,9 +1,9 @@
 import { User } from "../models/User.js";
 
-// Create a new user
+// Create a new user (REQUIRED RFID)
 export const createUser = async (req, res) => {
   try {
-    const { name, credits } = req.body;
+    const { name, credits, rfid_tag } = req.body;
 
     // Validate input
     if (!name) {
@@ -13,9 +13,29 @@ export const createUser = async (req, res) => {
       });
     }
 
-    // Check if user already exists
-    const existingUser = await User.findOne({ name });
-    if (existingUser) {
+    if (!rfid_tag) {
+      return res.status(400).json({
+        success: false,
+        message: "RFID tag is required",
+      });
+    }
+
+    // Check if user already exists by RFID
+    const existingUserByRFID = await User.findOne({ rfid_tag });
+    if (existingUserByRFID) {
+      return res.status(400).json({
+        success: false,
+        message: "RFID tag is already assigned to a user",
+        data: {
+          assignedTo: existingUserByRFID.name,
+          userId: existingUserByRFID._id,
+        },
+      });
+    }
+
+    // Check if user already exists by name
+    const existingUserByName = await User.findOne({ name });
+    if (existingUserByName) {
       return res.status(400).json({
         success: false,
         message: "User with this name already exists",
@@ -25,6 +45,7 @@ export const createUser = async (req, res) => {
     // Create new user
     const user = new User({
       name,
+      rfid_tag,
       credits: credits || 0,
     });
 
@@ -37,6 +58,15 @@ export const createUser = async (req, res) => {
     });
   } catch (error) {
     console.error("Create user error:", error);
+
+    // Handle duplicate key error for RFID
+    if (error.code === 11000 && error.keyPattern?.rfid_tag) {
+      return res.status(400).json({
+        success: false,
+        message: "RFID tag already exists in the system",
+      });
+    }
+
     res.status(500).json({
       success: false,
       message: "Internal server error",
@@ -45,24 +75,17 @@ export const createUser = async (req, res) => {
   }
 };
 
-// Update user credits
-export const updateCredits = async (req, res) => {
+// Update user
+export const updateUser = async (req, res) => {
   try {
     const { userId } = req.params;
-    const { credits, operation = "set" } = req.body; // operation: 'set', 'add', 'subtract'
+    const { name, rfid_tag, credits, operation = "set" } = req.body;
 
     // Validate input
     if (!userId) {
       return res.status(400).json({
         success: false,
         message: "User ID is required",
-      });
-    }
-
-    if (typeof credits !== "number") {
-      return res.status(400).json({
-        success: false,
-        message: "Credits must be a number",
       });
     }
 
@@ -75,63 +98,114 @@ export const updateCredits = async (req, res) => {
       });
     }
 
-    // Update credits based on operation
-    let updatedCredits;
-    switch (operation.toLowerCase()) {
-      case "add":
-        updatedCredits = user.credits + credits;
-        break;
-      case "subtract":
-        updatedCredits = user.credits - credits;
-        if (updatedCredits < 0) {
-          return res.status(400).json({
-            success: false,
-            message: "Insufficient credits",
-          });
-        }
-        break;
-      case "set":
-      default:
-        if (credits < 0) {
-          return res.status(400).json({
-            success: false,
-            message: "Credits cannot be negative",
-          });
-        }
-        updatedCredits = credits;
-        break;
+    let isUpdated = false;
+
+    // Update name if provided
+    if (name !== undefined && name !== user.name) {
+      // Check if new name already exists (if changing name)
+      const existingUserByName = await User.findOne({
+        name,
+        _id: { $ne: userId },
+      });
+      if (existingUserByName) {
+        return res.status(400).json({
+          success: false,
+          message: "User with this name already exists",
+        });
+      }
+      user.name = name;
+      isUpdated = true;
     }
 
-    // Update user
-    user.credits = updatedCredits;
-    user.updatedAt = Date.now();
+    // Update RFID if provided
+    if (rfid_tag !== undefined && rfid_tag !== user.rfid_tag) {
+      // Check if new RFID already exists (if changing RFID)
+      const existingUserByRFID = await User.findOne({
+        rfid_tag,
+        _id: { $ne: userId },
+      });
+      if (existingUserByRFID) {
+        return res.status(400).json({
+          success: false,
+          message: "RFID tag is already assigned to another user",
+        });
+      }
+      user.rfid_tag = rfid_tag;
+      isUpdated = true;
+    }
 
+    // Update credits if provided
+    if (credits !== undefined) {
+      if (typeof credits !== "number") {
+        return res.status(400).json({
+          success: false,
+          message: "Credits must be a number",
+        });
+      }
+
+      switch (operation.toLowerCase()) {
+        case "add":
+          user.credits += credits;
+          break;
+        case "subtract":
+          if (user.credits - credits < 0) {
+            return res.status(400).json({
+              success: false,
+              message: "Insufficient credits",
+            });
+          }
+          user.credits -= credits;
+          break;
+        case "set":
+        default:
+          if (credits < 0) {
+            return res.status(400).json({
+              success: false,
+              message: "Credits cannot be negative",
+            });
+          }
+          user.credits = credits;
+          break;
+      }
+      isUpdated = true;
+    }
+
+    // Check if there are any updates
+    if (!isUpdated) {
+      return res.status(400).json({
+        success: false,
+        message: "No fields to update",
+      });
+    }
+
+    // Save updated user
     await user.save();
 
     res.status(200).json({
       success: true,
-      message: "Credits updated successfully",
+      message: "User updated successfully",
       data: {
-        userId: user._id,
+        _id: user._id,
         name: user.name,
-        previousCredits:
-          user.credits -
-          (operation === "add"
-            ? -credits
-            : operation === "subtract"
-            ? credits
-            : 0),
-        newCredits: user.credits,
-        operation,
+        rfid_tag: user.rfid_tag,
+        credits: user.credits,
+        updatedAt: user.updatedAt,
       },
     });
   } catch (error) {
-    console.error("Update credits error:", error);
+    console.error("Update user error:", error);
 
     if (error.name === "CastError") {
       return res.status(400).json({
         success: false,
         message: "Invalid user ID format",
+      });
+    }
+
+    if (error.code === 11000 && error.keyPattern?.rfid_tag) {
+      return res.status(400).json({
+        success: false,
+        message: "RFID tag already exists in the system",
       });
     }
 
@@ -143,7 +217,27 @@ export const updateCredits = async (req, res) => {
   }
 };
 
-// Get user by ID (optional helper)
+// Get all users
+export const getAllUsers = async (req, res) => {
+  try {
+    const users = await User.find().sort({ createdAt: -1 }).select("-__v");
+
+    res.status(200).json({
+      success: true,
+      count: users.length,
+      data: users,
+    });
+  } catch (error) {
+    console.error("Get all users error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: error.message,
+    });
+  }
+};
+
+// Get user by ID
 export const getUserById = async (req, res) => {
   try {
     const { userId } = req.params;
@@ -162,9 +256,18 @@ export const getUserById = async (req, res) => {
     });
   } catch (error) {
     console.error("Get user error:", error);
+
+    if (error.name === "CastError") {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID format",
+      });
+    }
+
     res.status(500).json({
       success: false,
       message: "Internal server error",
+      error: error.message,
     });
   }
 };
